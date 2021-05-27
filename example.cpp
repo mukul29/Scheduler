@@ -40,6 +40,11 @@ int main() {
 
   s.cron("5 0 * * *", []() { std::cout << "every day 5 minutes after midnight" << std::endl; });
 
+  std::shared_ptr<Bosma::Task> ptr = s.every(std::chrono::seconds(1), message, "Executes every second, gonna stop this soon");
+  
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  s.remove_task(ptr);
+
   // destructor of Bosma::Scheduler will cancel all schedules but finish any tasks currently running
   std::this_thread::sleep_for(std::chrono::minutes(10));
 }

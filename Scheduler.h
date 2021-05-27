@@ -89,19 +89,20 @@ namespace Bosma {
         }
 
         template<typename _Callable, typename... _Args>
-        void in(const Clock::time_point time, _Callable &&f, _Args &&... args) {
+        std::shared_ptr<Task> in(const Clock::time_point time, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task> t = std::make_shared<InTask>(
                   std::bind(std::forward<_Callable>(f), std::forward<_Args>(args)...));
-          add_task(time, std::move(t));
+          add_task(time, t);
+          return t;
         }
 
         template<typename _Callable, typename... _Args>
-        void in(const Clock::duration time, _Callable &&f, _Args &&... args) {
-          in(Clock::now() + time, std::forward<_Callable>(f), std::forward<_Args>(args)...);
+        std::shared_ptr<Task> in(const Clock::duration time, _Callable &&f, _Args &&... args) {
+          return in(Clock::now() + time, std::forward<_Callable>(f), std::forward<_Args>(args)...);
         }
 
         template<typename _Callable, typename... _Args>
-        void at(const std::string &time, _Callable &&f, _Args &&... args) {
+        std::shared_ptr<Task> at(const std::string &time, _Callable &&f, _Args &&... args) {
           // get current time as a tm object
           auto time_now = Clock::to_time_t(Clock::now());
           std::tm tm = *std::localtime(&time_now);
@@ -125,15 +126,16 @@ namespace Bosma {
             throw std::runtime_error("Cannot parse time string: " + time);
           }
 
-          in(tp, std::forward<_Callable>(f), std::forward<_Args>(args)...);
+          return in(tp, std::forward<_Callable>(f), std::forward<_Args>(args)...);
         }
 
         template<typename _Callable, typename... _Args>
-        void every(const Clock::duration time, _Callable &&f, _Args &&... args) {
+        std::shared_ptr<Task> every(const Clock::duration time, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
-          add_task(next_time, std::move(t));
+          add_task(next_time, t);
+          return t;
         }
 
 // expression format:
@@ -147,18 +149,33 @@ namespace Bosma {
 //    │ │ │ │ │
 //    * * * * *
         template<typename _Callable, typename... _Args>
-        void cron(const std::string &expression, _Callable &&f, _Args &&... args) {
+        std::shared_ptr<Task> cron(const std::string &expression, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task> t = std::make_shared<CronTask>(expression, std::bind(std::forward<_Callable>(f),
                                                                                      std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
-          add_task(next_time, std::move(t));
+          add_task(next_time, t);
+          return t;
         }
 
         template<typename _Callable, typename... _Args>
-        void interval(const Clock::duration time, _Callable &&f, _Args &&... args) {
+        std::shared_ptr<Task> interval(const Clock::duration time, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...), true);
-          add_task(Clock::now(), std::move(t));
+          add_task(Clock::now(), t);
+          return t;
+        }
+
+        void remove_task(std::shared_ptr<Task> t)
+        {
+            std::lock_guard<std::mutex> l(lock);
+            for(auto& task : tasks)
+            {
+                if(task.second && task.second == t)
+                {
+                    task.second->recur = false;
+                    task.second = nullptr;
+                }
+            }
         }
 
     private:
@@ -190,6 +207,7 @@ namespace Bosma {
             for (auto i = tasks.begin(); i != end_of_tasks_to_run; ++i) {
 
               auto &task = (*i).second;
+              if(!task) continue;
 
               if (task->interval) {
                 // if it's an interval task, only add the task back after f() is completed
