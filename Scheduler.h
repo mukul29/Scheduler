@@ -178,6 +178,16 @@ namespace Bosma {
             }
         }
 
+        void clear_tasks()
+        {
+            std::lock_guard<std::mutex> l(lock);
+            for(auto& task : tasks)
+            {
+                task.second->recur = false;
+                task.second = nullptr;
+            }
+        }
+
     private:
         std::atomic<bool> done;
 
